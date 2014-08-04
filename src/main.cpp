@@ -14,8 +14,11 @@ using namespace std;
 using namespace cv;
 
 // Comparison function
-bool compare(const Vec3b &v, const Vec3b &w) {
-    return v[0] < w[1];
+bool compare_LT(const Vec3b &v, const Vec3b &w) {
+    return v[0] < w[0];
+}
+bool compare_GT(const Vec3b &v, const Vec3b &w) {
+    return v[0] > w[0];
 }
 
 DEFINE_bool(display, false, "Display video in window.");
@@ -50,7 +53,7 @@ int video_file_filter(options_type *o, char *window_name);
 options_type * create_options(int *argc, char ***argv) {
     google::ParseCommandLineFlags(argc, argv, true);
     options_type *o = (options_type *) calloc(1, sizeof(options_type));
-    
+
     if (*argc != 2) {
         cout << "usage: " << *argv[0] << " input-video" << endl;
         free(o);
@@ -113,20 +116,56 @@ int main(int argc, char **argv) {
     return 0;
 }
 
-void sort_row(options_type *o, Mat r) {
-    int iMin;
-    int n = o->size.width;
-    for (int j = 0; j < n; j++) {
-        iMin = j;
-        for (int i = j + 1; i < n; i++) {
-            if (compare(r.at<Vec3b>(i), r.at<Vec3b>(iMin)))
-                iMin = i;
-        }
-        if (iMin != j) {
-            swap(r.at<Vec3b>(j), r.at<Vec3b>(iMin));
+/*
+   void sort_row(options_type *o, Mat r) {
+   int iMin;
+   int n = o->size.width;
+   for (int j = 0; j < n; j++) {
+   iMin = j;
+   for (int i = j + 1; i < n; i++) {
+   if (compare(r.at<Vec3b>(i), r.at<Vec3b>(iMin)))
+   iMin = i;
+   }
+   if (iMin != j) {
+   swap(r.at<Vec3b>(j), r.at<Vec3b>(iMin));
+   }
+   }
+   cout << ".";
+   }
+   */
+
+// grabbed and changed from http://www.algolist.net/Algorithms/Sorting/Quicksort
+void quickSort(Mat r, int left, int right) {
+    int i = left, j = right;
+    Vec3b pivot = r.at<Vec3b>((left + right) / 2);
+
+    /* partition */
+    while (i <= j) {
+        while (compare_LT(r.at<Vec3b>(i), pivot))
+            i++;
+        while (compare_GT(r.at<Vec3b>(j), pivot))
+            j--;
+        if (i <= j) {
+            swap(r.at<Vec3b>(i), r.at<Vec3b>(j));
+            i++;
+            j--;
         }
     }
+
+    /* recursion */
+    if (left < j) {
+        quickSort(r, left, j);
+    }
+    if (i < right) {
+        quickSort(r, i, right);
+    }
 }
+
+void sort_row(options_type *o, Mat r) {
+    quickSort(r, 0, o->size.width-1);
+    cout << ".";
+}
+
 
 void *sort_rows_(void *vdata) {
     thread_data *data = (thread_data*)vdata;
@@ -168,7 +207,7 @@ int video_file_filter(options_type *o, char *window_name) {
         *(o->video_src) >> frame;
         // Output status to console
         if (!FLAGS_quiet)
-            printf("Frame %d of %d...",j + 1, frame_count);
+            printf("Frame %d of %d",j + 1, frame_count);
 
         // Create a new frame.
         switch (o->axis) {
@@ -194,7 +233,7 @@ int video_file_filter(options_type *o, char *window_name) {
             printf("writing...");
             o->video_dst->write(frame);
         }
-        
+
         printf("done.\n");
 
     }
