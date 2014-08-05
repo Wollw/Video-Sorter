@@ -15,16 +15,15 @@ using namespace cv;
 
 // Comparison function
 bool compare_LT(const Vec3b &v, const Vec3b &w) {
-    return v[0] < w[0];
+    return (v[0] + v[1] +  v[2]) / 3 < (w[0] + w[1] + w[2]) / 3;
 }
 bool compare_GT(const Vec3b &v, const Vec3b &w) {
-    return v[0] > w[0];
+    return (v[0] + v[1] +  v[2]) / 3 > (w[0] + w[1] + w[2]) / 3;
 }
 
-DEFINE_bool(display, false, "Display video in window.");
 DEFINE_bool(quiet, false, "Suppress terminal output.");
 DEFINE_string(save, "", "Save output to file.");
-DEFINE_string(axis, "y", "Axis of rotation.");
+DEFINE_string(axis, "x", "Axis of rotation.");
 DEFINE_double(fps, 24, "Frame per second for output.");
 DEFINE_double(threadcount, 4, "Thread count.");
 
@@ -102,11 +101,6 @@ int main(int argc, char **argv) {
     if (o == NULL)
         return -1;
 
-    if (FLAGS_display) {
-        namedWindow(argv[0],CV_WINDOW_NORMAL);
-        setWindowProperty(argv[0], CV_WND_PROP_FULLSCREEN, CV_WINDOW_FULLSCREEN);
-    }
-
     video_file_filter(o, argv[0]);
 
     delete o->video_src;
@@ -115,24 +109,6 @@ int main(int argc, char **argv) {
 
     return 0;
 }
-
-/*
-   void sort_row(options_type *o, Mat r) {
-   int iMin;
-   int n = o->size.width;
-   for (int j = 0; j < n; j++) {
-   iMin = j;
-   for (int i = j + 1; i < n; i++) {
-   if (compare(r.at<Vec3b>(i), r.at<Vec3b>(iMin)))
-   iMin = i;
-   }
-   if (iMin != j) {
-   swap(r.at<Vec3b>(j), r.at<Vec3b>(iMin));
-   }
-   }
-   cout << ".";
-   }
-   */
 
 // grabbed and changed from http://www.algolist.net/Algorithms/Sorting/Quicksort
 void quickSort(Mat r, int left, int right) {
@@ -162,16 +138,24 @@ void quickSort(Mat r, int left, int right) {
 }
 
 void sort_row(options_type *o, Mat r) {
-    quickSort(r, 0, o->size.width-1);
-    cout << ".";
+    if (FLAGS_axis == "x")
+        quickSort(r, 0, o->size.width-1);
+    else
+        quickSort(r, 0, o->size.height-1);
 }
 
 
 void *sort_rows_(void *vdata) {
     thread_data *data = (thread_data*)vdata;
     Mat f = data->frame;
-    for (int y = data->thread_id; y < data->o->size.height;  y += data->thread_count) {
-        sort_row(data->o, f.row(y));
+    if (FLAGS_axis == "x") {
+        for (int y = data->thread_id; y < data->o->size.height; y += data->thread_count) {
+            sort_row(data->o, f.row(y));
+        }
+    } else {
+        for (int x = data->thread_id; x < data->o->size.width; x += data->thread_count) {
+            sort_row(data->o, f.col(x));
+        }
     }
 }
 
@@ -195,7 +179,6 @@ void sort_rows(options_type *o, Mat f) {
     }
 }
 
-
 int video_file_filter(options_type *o, char *window_name) {
     Mat frame;
     *(o->video_src) >> frame;
@@ -207,33 +190,17 @@ int video_file_filter(options_type *o, char *window_name) {
         *(o->video_src) >> frame;
         // Output status to console
         if (!FLAGS_quiet)
-            printf("Frame %d of %d",j + 1, frame_count);
+            printf("Frame %d of %d...",j + 1, frame_count);
 
         // Create a new frame.
-        switch (o->axis) {
-            case AXIS_X:
-                sort_rows(o, frame);
-                break;
-            case AXIS_Y:
-                break;
-            default:
-                cout << "UNIMPLEMENTED" << endl;
-                return -1;
+        if (o->axis == AXIS_X || o->axis == AXIS_Y) {
+            sort_rows(o, frame);
+        } else {
+            cout << "UNIMPLEMENTED" << endl;
+            return -1;
         }
 
-        // Display window
-        if (FLAGS_display) {
-            imshow(window_name, frame);
-            if (waitKey(1) == '')
-                return 0;
-        }
-
-        // Save frame to file
-        if (!FLAGS_save.empty()) {
-            printf("writing...");
-            o->video_dst->write(frame);
-        }
-
+        o->video_dst->write(frame);
         printf("done.\n");
 
     }
